@@ -1,0 +1,17 @@
+#!/bin/sh
+
+declare user_host="${1}"
+if [ -z "${user_host}" ]; then
+	echo "$( basename "${0}" ): User and host should be defined. " >&2
+	exit 1
+fi
+
+declare key_fp="${HOME}/.ssh/id_rsa"
+if ! ssh -i "${key_fp}" -q -o BatchMode=yes "${user_host}" true; then
+	mkdir -p $( dirname "${key_fp}" )
+	if [ ! -f "${key_fp}" ]; then
+		ssh-keygen -t "rsa" -f "${key_fp}" -N "" -q
+	fi
+	ssh-copy-id -i "${key_fp}" "${user_host}"
+fi
+
