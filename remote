@@ -1,0 +1,36 @@
+#!/bin/bash
+
+export PATTERN='^\(\(.*\)\@\)\?\(.*\)$'
+export HOST="\3"
+export USER="\2"
+
+export SSH=$( which "ssh" )
+export INSTALL_SSH_KEYS=$( which "install-ssh-keys" )
+export SYSTEMCTL=$( which "systemctl" )
+
+declare script=$( basename "${0}" )
+declare user=$( echo "${script}" | sed "s,${PATTERN},${USER},g" )
+[ -z "${user}" ] && user=$( id -un )
+declare host=$( echo "${script}" | sed "s,${PATTERN},${HOST},g" )
+	
+declare command="${1}"
+shift
+
+case "${command}" in
+	"ssh")
+		"${SSH}" "${user}@${host}"
+	;;
+	
+	"install-ssh-keys")
+		"${INSTALL_SSH_KEYS}" "${user}@${host}"
+	;;
+
+	"systemctl")
+		"${SYSTEMCTL}" --host="${user}@${host}" "${@}"
+	;;
+
+	*)
+		"${SSH}" "${user}@${host}" "${@}"
+	;;
+esac
+
