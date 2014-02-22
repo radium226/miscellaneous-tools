@@ -8,7 +8,22 @@ export SSH=$( which "ssh" )
 export INSTALL_SSH_KEYS=$( which "install-ssh-keys" )
 export SYSTEMCTL=$( which "systemctl" )
 
+export SCRIPT="${0}"
+
+remote::help()
+{
+	cat <<EOF
+ln -s "${SCRIPT}" "./[user@]host"
+./[user@]host [ssh|systemctl|install-ssh-keys]
+EOF
+}
+
 declare script=$( basename "${0}" )
+if [ x"${script}" = x"remote" ]; then
+	remote::help >&2
+	exit 1
+fi
+
 declare user=$( echo "${script}" | sed "s,${PATTERN},${USER},g" )
 [ -z "${user}" ] && user=$( id -un )
 declare host=$( echo "${script}" | sed "s,${PATTERN},${HOST},g" )
