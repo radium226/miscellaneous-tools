@@ -1,0 +1,132 @@
+#!/bin/python
+
+import os
+import sys
+from subprocess import Popen, PIPE
+from itertools import groupby
+import re
+import functools
+import itertools
+
+class Version:
+    
+    def __init__(self, program_parts, package_parts):
+        self.__program_parts = program_parts
+        self.__package_parts = package_parts
+
+    @property
+    def program_parts(self):
+        return self.__program_parts
+
+    @staticmethod
+    def __eq_parts(left_parts, right_parts):
+        return all(map(lambda pair: pair[0] == pair[1], itertools.zip_longest(left_parts, right_parts, fillvalue=0)))
+
+    @staticmethod
+    def __lt_parts(left_parts, right_parts):
+        for left_part, right_part in itertools.zip_longest(left_parts, right_parts, fillvalue=0):
+            if type(left_part) is int and type(right_part) is int:
+                if left_part == right_part:
+                    continue
+                else:
+                    return left_part.__lt__(right_part)
+            else:
+                return str(left_part).__lt__(str(right_part))
+        return False
+
+    def __lt__(self, it):
+        return self.__lt_parts(self.__program_parts, it.__program_parts)
+
+    @staticmethod
+    def parse(text):
+        def normalize(parts, negate=False):
+            for part in parts:
+                integer_match = re.match("^[0-9]+$", part)
+                other_match = re.match("^([a-zA-Z]*)([0-9]+)([a-zA-Z]*)$", part)
+                if integer_match:
+                    yield int(part)
+                elif "rc" in part.lower():
+                    left_part, right_part = part.lower().split("rc")
+                    if len(left_part) > 0:
+                        yield from normalize([left_part])
+                    if len(right_part) > 0:
+                        yield from normalize([right_part], negate=True)
+                elif "re" in part.lower():
+                    left_part, right_part = part.lower().split("re")
+                    if len(left_part) > 0:
+                        yield from normalize([left_part])
+                    if len(right_part) > 0:
+                        yield from normalize([right_part])
+                elif "p" in part.lower():
+                    left_part, right_part = part.lower().split("p")
+                    if len(left_part) > 0:
+                        yield from normalize([left_part])
+                    if len(right_part) > 0:
+                        yield from normalize([right_part])
+                elif other_match:
+                    left_part = other_match.group(1)
+                    if len(left_part) > 0:
+                        yield from normalize([left_part])
+                    middle_part = other_match.group(2)
+                    yield from normalize([middle_part])
+                    right_part = other_match.group(3)
+                    if len(right_part) > 0:
+                        yield from normalize([right_part])
+                else:
+                    try:
+                        yield (-1 if negate else 1) * int(part)
+                    except:
+                        yield str(part)
+                            
+
+        parts = text.split("-")
+        package_text = parts[-1]
+        package_parts = list(normalize(re.split("\.|:|\+|_", package_text)))
+        program_text = "-".join(parts[0:len(parts) - 1])
+        program_parts = list(normalize(re.split("\.|:|\+|_", program_text)))
+        return Version(program_parts, package_parts)
+    
+    def __repr__(self):
+        return "Version{__program_parts=%(program_parts)s, __package_parts=%(package_parts)s}" % {"program_parts": self.__program_parts, "package_parts": self.__package_parts}
+
+
+class Package:
+
+    def __init__(self, path):
+        self.path = path
+        self.name, self.version= self.__query_pacman(path)
+        
+    @staticmethod
+    def __query_pacman(path):
+        process = Popen(["pacman", "-Qp", path], stdout=PIPE, stderr=PIPE)
+        stdout, stderr = process.communicate()
+        name, versions = stdout.decode("utf-8").strip().split(" ")
+        return name, Version.parse(versions)
+
+    def __repr__(self):
+        return "Packages{name=%(name)s, version=%(version)s}" % {"name": self.name, "version": self.version}
+    
+    @staticmethod
+    def group_by_name(packages):
+        for package_name, grouped_packages in groupby(packages, key=lambda package: package.name):
+            yield package_name, sorted(list(grouped_packages), key=lambda package: package.version, reverse=True)
+
+    @staticmethod
+    def latest(packages):
+        packages = list(packages)
+        return max(packages)
+
+    @staticmethod
+    def in_cache(path):
+        for cache_path, directory_names, file_names in os.walk(path):
+            for file_name in file_names:
+                if any(map(lambda extension: file_name.endswith(extension), [".tar.xz", ".tar.gz"])):
+                    yield Package(os.path.join(cache_path, file_name))
+    
+
+if __name__ == "__main__":
+    packages = Package.in_cache(sys.argv[1])
+    for package_name, grouped_packages in Package.group_by_name(packages):
+        for package in grouped_packages[2:]:
+            print("rm \"%(path)s\"" % {"path": package.path})
+

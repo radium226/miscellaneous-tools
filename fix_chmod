@@ -1,0 +1,7 @@
+#!/bin/sh
+
+# http://content.hccfl.edu/pollock/Unix/OctChart.htm
+
+find "${1:-.}" -type "d" -print0 | xargs -0 -I {} chmod 751 "{}"
+find "${1:-.}" -type "f" -print0 | xargs -0 -I {} chmod 644 "{}"
+ 
