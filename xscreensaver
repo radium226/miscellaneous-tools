@@ -1,0 +1,92 @@
+#!/bin/python
+
+import subprocess
+import time
+import threading
+import functools
+
+class ScreenSaver:
+
+    def __init__(self):
+        self.__enabled = True
+
+    def enable(self):
+        self.__enabled = True
+        subprocess.Popen(["xset", "+dpms"])
+        subprocess.Popen(["xset", "s", "on"])
+
+    def disable(self):
+        self.__enabled = False
+        subprocess.Popen(["xset", "s", "off"])
+        subprocess.Popen(["xset", "-dpms"])
+        self.__delay()
+    
+    def __delay(self, duration=60):
+        if not self.__enabled:
+            process = subprocess.Popen(["/usr/bin/xscreensaver-command", "-deactivate"])
+            threading.Timer(duration, self.__delay).start()
+
+
+def pid_of(window_id):
+    process = subprocess.Popen(["xprop", "-id", window_id, "32i", "$0\n", "_NET_WM_PID"], stdout=subprocess.PIPE)
+    stdout = process.stdout
+    pid = "".join(map(lambda line: line.decode(encoding="UTF-8").strip().replace("_NET_WM_PID(CARDINAL)", ""), iter(stdout.readline, b"")))
+    return pid
+
+def cmdline_of(pid):
+    with open("/proc/%s/cmdline" % pid) as f:
+        return "".join(f.readlines())
+
+def is_fullscreen(window_id):
+    process = subprocess.Popen(["xprop", "-id", window_id, "_NET_WM_STATE"], stdout=subprocess.PIPE)
+    stdout = process.stdout
+    pid = "".join(map(lambda line: line.decode(encoding="UTF-8").strip(), iter(stdout.readline, b"")))
+    return pid
+
+def watch_for_fullscreen(window_id, callback):
+    xprop_process = subprocess.Popen(["xprop", "-spy", "-id", window_id, "_NET_WM_STATE"], stdout=subprocess.PIPE)
+    xprop_stdout = xprop_process.stdout
+    
+    def read_target():
+        #print("Started (%s)" % window_id)
+        for line in map(lambda line: line.decode(encoding="UTF8").strip(), iter(xprop_stdout.readline, b"")):
+           #print(line)
+           fullscreen = "_NET_WM_STATE_FULLSCREEN" in line
+           callback(fullscreen)
+        #print("Finished (%s)" % window_id)
+    
+    xprop_read_thread = threading.Thread(target=read_target)
+    xprop_read_thread.start()
+    return xprop_process
+    
+def kill_xscreensaver(screen_saver, fullscreen):
+    #print("fullscreen = %s " % str(fullscreen))
+    if fullscreen:
+        screen_saver.disable()
+    else:
+        screen_saver.enable()
+        
+
+
+    
+if __name__ == "__main__":
+    subprocess.Popen(["/usr/bin/xscreensaver", "-no-splash"])
+    process = subprocess.Popen(["xprop", "-root", "-spy", "32x", "$0\n", "_NET_ACTIVE_WINDOW"], stdout=subprocess.PIPE)
+    stdout = process.stdout
+    process = None
+    screen_saver = ScreenSaver()    
+    for line in map(lambda b: b.decode(encoding="UTF-8").strip(), iter(stdout.readline, b"")):
+        window_id = line.replace("_NET_ACTIVE_WINDOW(WINDOW)", "")
+        if process is not None:
+            process.terminate()
+        
+        process = watch_for_fullscreen(window_id, callback=functools.partial(kill_xscreensaver, screen_saver))
+    
+
+        #pid = pid_of(window_id)
+        #cmdline = cmdline_of(pid)
+        #binary = cmdline.split("\x00")[0]
+        #time.sleep(1)
+        ##print(is_fullscreen(window_id))
+        #print(binary)
+    
